@@ -46,6 +46,13 @@ class PrefillPrefixLMAttention(Attention):
         else:
             kv_cache_dtype = "auto"
 
+        if cache_config is not None and cache_config.per_layer_kv_cache_dtype:
+            from vllm.model_executor.models.utils import extract_layer_index
+
+            _layer_idx = str(extract_layer_index(kwargs.get("prefix", "")))
+            if _layer_idx in cache_config.per_layer_kv_cache_dtype:
+                kv_cache_dtype = cache_config.per_layer_kv_cache_dtype[_layer_idx]
+
         underlying_attn_backend = get_attn_backend(
             head_size,
             dtype,

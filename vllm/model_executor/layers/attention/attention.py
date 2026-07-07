@@ -288,6 +288,20 @@ class Attention(nn.Module, AttentionLayerBase):
                 sliding_window,
             )
 
+        # Override kv_cache_dtype for specific layers
+        if cache_config is not None and cache_config.per_layer_kv_cache_dtype:
+            from vllm.model_executor.models.utils import extract_layer_index
+
+            layer_idx = str(extract_layer_index(prefix))
+            if layer_idx in cache_config.per_layer_kv_cache_dtype:
+                kv_cache_dtype = cache_config.per_layer_kv_cache_dtype[layer_idx]
+                calculate_kv_scales = False
+                logger.debug(
+                    "Layer %s: per-layer override kv_cache_dtype=%s",
+                    prefix,
+                    kv_cache_dtype,
+                )
+
         self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(
             kv_cache_dtype, vllm_config.model_config
         )

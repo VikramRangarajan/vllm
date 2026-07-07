@@ -115,6 +115,10 @@ class CacheConfig:
     kv_cache_dtype_skip_layers: list[str] = field(default_factory=list)
     """Layer patterns to skip KV cache quantization. Accepts layer indices
     (e.g., '0', '2', '4') or attention type names (e.g., 'sliding_window')."""
+    per_layer_kv_cache_dtype: dict[str, CacheDType] = field(default_factory=dict)
+    """Per-layer KV cache dtype overrides. Maps layer index strings to
+    specific quantization dtypes (e.g., ``{"0": "fp8", "2": "int8_per_token_head"}``).
+    Takes precedence over ``cache_dtype`` and ``kv_cache_dtype_skip_layers``."""
     mamba_page_size_padded: int | None = None
     """ Optional override for mamba page size; used by hybrid mamba/attention
     models to ensure exact alignment with attention page size."""
