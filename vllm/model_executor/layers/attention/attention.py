@@ -307,6 +307,9 @@ class Attention(nn.Module, AttentionLayerBase):
         )
         self.kv_cache_dtype = kv_cache_dtype
         self.calculate_kv_scales = calculate_kv_scales
+        self.kv_cache_fake_quant_bits = (
+            cache_config.kv_cache_fake_quant_bits if cache_config else None
+        )
         if num_kv_heads is None:
             num_kv_heads = num_heads
         assert num_heads % num_kv_heads == 0, (
@@ -737,6 +740,11 @@ def unified_kv_cache_update(
     """
     layer_name = _resolve_layer_name(layer_name)
     _, attn_layer, kv_cache, layer_slot_mapping = get_attention_context(layer_name)
+    if getattr(attn_layer, "kv_cache_fake_quant_bits", None):
+        fake_bits: int = attn_layer.kv_cache_fake_quant_bits
+        key = _fake_quantize_kv_cache(key, fake_bits)
+        value = _fake_quantize_kv_cache(value, fake_bits)
+
     if layer_slot_mapping is not None:
         assert hasattr(attn_layer.impl, "do_kv_cache_update"), (
             f"{attn_layer.impl.__class__.__name__} does not support kv cache update"
@@ -750,6 +758,33 @@ def unified_kv_cache_update(
         )
 
     return torch.empty(0, device=kv_cache.device, dtype=kv_cache.dtype)
+
+
+def _fake_quantize_kv_cache(
+    x: torch.Tensor, num_bits: int
+) -> torch.Tensor:
+    """Symmetric quantize-dequantize round-trip (fake quantization).
+
+    Quantizes ``x`` to ``num_bits`` bits using per-tensor symmetric
+    quantization, then dequantizes back to the original dtype. The output
+    has quantization noise but remains in full precision — suitable for
+    researching low-precision KV cache effects without modifying attention
+    kernels.
+
+    Args:
+        x: Input tensor (float16, bfloat16, or float32).
+        num_bits: Number of bits for quantization (e.g., 4 for int4).
+
+    Returns:
+        Tensor with the same shape and dtype as ``x``, after a
+        quantize-dequantize round-trip.
+    """
+    qmax = float(2 ** (num_bits - 1) - 1)
+    qmin = float(-(2 ** (num_bits - 1)))
+    amax = x.abs().max().clamp(min=1e-12)
+    scale = (qmax / amax).to(x.dtype)
+    q = torch.clamp(torch.round(x * scale), qmin, qmax)
+    return q / scale
 
 
 def unified_kv_cache_update_fake(

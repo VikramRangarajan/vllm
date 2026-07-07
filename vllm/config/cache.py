@@ -120,6 +120,12 @@ class CacheConfig:
     """Per-layer KV cache dtype overrides. Maps layer index strings to
     specific quantization dtypes (e.g., ``{"0": "fp8", "2": "int8_per_token_head"}``).
     Takes precedence over ``cache_dtype`` and ``kv_cache_dtype_skip_layers``."""
+    kv_cache_fake_quant_bits: int | None = Field(default=None, ge=1)
+    """If set, applies a quantize-dequantize round-trip to KV cache values
+    before writing them to the cache. The values remain in full precision
+    in the cache, but quantization noise is introduced at the specified
+    bit-width (e.g., 4 for int4). Useful for research on low-precision
+    KV cache effects without modifying attention kernels."""
     mamba_page_size_padded: int | None = None
     """ Optional override for mamba page size; used by hybrid mamba/attention
     models to ensure exact alignment with attention page size."""
@@ -221,6 +227,8 @@ class CacheConfig:
             "kv_cache_max_concurrency",
             # WIP feature toggle not impacting compiled graph shape
             "kv_sharing_fast_prefill",
+            # Fake quant round-trip doesn't change graph shape or memory layout
+            "kv_cache_fake_quant_bits",
         }
 
         from vllm.config.utils import get_hash_factors, hash_factors
