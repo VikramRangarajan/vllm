@@ -765,14 +765,15 @@ def _fake_quantize_kv_cache(
 ) -> torch.Tensor:
     """Symmetric quantize-dequantize round-trip (fake quantization).
 
-    Quantizes ``x`` to ``num_bits`` bits using per-tensor symmetric
-    quantization, then dequantizes back to the original dtype. The output
-    has quantization noise but remains in full precision — suitable for
-    researching low-precision KV cache effects without modifying attention
-    kernels.
+    Quantizes ``x`` to ``num_bits`` bits using per-token symmetric
+    quantization (each token has its own scale), then dequantizes back
+    to the original dtype. The output has quantization noise but remains
+    in full precision — suitable for researching low-precision KV cache
+    effects without modifying attention kernels.
 
     Args:
-        x: Input tensor (float16, bfloat16, or float32).
+        x: Input tensor of shape ``[num_tokens, num_heads, head_dim]``
+            (float16, bfloat16, or float32).
         num_bits: Number of bits for quantization (e.g., 4 for int4).
 
     Returns:
@@ -781,10 +782,13 @@ def _fake_quantize_kv_cache(
     """
     qmax = float(2 ** (num_bits - 1) - 1)
     qmin = float(-(2 ** (num_bits - 1)))
-    amax = x.abs().max().clamp(min=1e-12)
-    scale = (qmax / amax).to(x.dtype)
-    q = torch.clamp(torch.round(x * scale), qmin, qmax)
-    return q / scale
+    orig_dtype = x.dtype
+    x_f32 = x.float()
+    reduce_dims = tuple(range(1, x_f32.dim()))
+    amax = x_f32.abs().amax(dim=reduce_dims, keepdim=True).clamp(min=1e-12)
+    scale = qmax / amax
+    q = torch.clamp(torch.round(x_f32 * scale), qmin, qmax)
+    return (q / scale).to(orig_dtype)
 
 
 def unified_kv_cache_update_fake(
