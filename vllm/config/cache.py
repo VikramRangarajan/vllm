@@ -124,7 +124,12 @@ class CacheConfig:
     before writing them to the cache. The values remain in full precision
     in the cache, but quantization noise is introduced at the specified
     bit-width (e.g., 4 for int4). Useful for research on low-precision
-    KV cache effects without modifying attention kernels."""
+    KV cache effects without modifying attention kernels. Takes precedence
+    over ``per_layer_kv_cache_fake_quant_bits`` when set."""
+    per_layer_kv_cache_fake_quant_bits: dict[str, int] = field(default_factory=dict)
+    """Per-layer KV cache fake quantization bit-width overrides. Maps layer
+    index strings to bit-widths (e.g., ``{"0": 4, "2": 8}``). Only applies
+    when ``kv_cache_fake_quant_bits`` is not set."""
     mamba_page_size_padded: int | None = None
     """ Optional override for mamba page size; used by hybrid mamba/attention
     models to ensure exact alignment with attention page size."""
@@ -228,6 +233,7 @@ class CacheConfig:
             "kv_sharing_fast_prefill",
             # Fake quant round-trip doesn't change graph shape or memory layout
             "kv_cache_fake_quant_bits",
+            "per_layer_kv_cache_fake_quant_bits",
         }
 
         from vllm.config.utils import get_hash_factors, hash_factors
