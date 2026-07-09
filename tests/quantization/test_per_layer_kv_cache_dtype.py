@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Tests for per-layer KV cache dtype overrides."""
 
 import pytest
@@ -18,10 +20,12 @@ def test_per_layer_kv_cache_dtype(vllm_runner):
                 expected = "auto" if str(i) in ("0", "2") else "fp8"
                 actual = layer.self_attn.attn.kv_cache_dtype
                 assert actual == expected, (
-                    f"Layer {i}: expected kv_cache_dtype={expected!r}, "
-                    f"got {actual!r}"
+                    f"Layer {i}: expected kv_cache_dtype={expected!r}, got {actual!r}"
                 )
-                print(f"  Layer {i}: kv_cache_dtype={actual!r} (expected {expected!r})  OK")
+                print(
+                    f"  Layer {i}: kv_cache_dtype={actual!r} ",
+                    f"(expected {expected!r})  OK",
+                )
 
         llm.apply_model(check_layers)
 
@@ -49,10 +53,12 @@ def test_per_layer_kv_cache_dtype_skip_override(vllm_runner):
                     expected = "fp8"
                 actual = layer.self_attn.attn.kv_cache_dtype
                 assert actual == expected, (
-                    f"Layer {i}: expected kv_cache_dtype={expected!r}, "
-                    f"got {actual!r}"
+                    f"Layer {i}: expected kv_cache_dtype={expected!r}, got {actual!r}"
                 )
-                print(f"  Layer {i}: kv_cache_dtype={actual!r} (expected {expected!r})  OK")
+                print(
+                    f"  Layer {i}: kv_cache_dtype={actual!r} ",
+                    f"(expected {expected!r})  OK",
+                )
 
         llm.apply_model(check_layers)
 
@@ -78,7 +84,11 @@ def test_per_layer_kv_cache_dtype_config():
     config = CacheConfig(
         block_size=16,
         cache_dtype="fp8",
-        per_layer_kv_cache_dtype={"0": "auto", "2": "int8_per_token_head", "4": "nvfp4"},
+        per_layer_kv_cache_dtype={
+            "0": "auto",
+            "2": "int8_per_token_head",
+            "4": "nvfp4",
+        },
     )
     assert config.per_layer_kv_cache_dtype == {
         "0": "auto",
@@ -105,5 +115,7 @@ def test_layer_index_extraction():
     ]
     for prefix, expected in cases:
         result = extract_layer_index(prefix)
-        assert result == expected, f"extract_layer_index({prefix!r}) = {result}, expected {expected}"
+        assert result == expected, (
+            f"extract_layer_index({prefix!r}) = {result}, expected {expected}"
+        )
         print(f"  extract_layer_index({prefix!r}) = {result}  OK")

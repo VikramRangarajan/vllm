@@ -689,6 +689,9 @@ class EngineArgs:
     kv_cache_fake_quant_bits: int | None = get_field(
         CacheConfig, "kv_cache_fake_quant_bits"
     )
+    per_layer_kv_cache_fake_quant_bits: dict[str, int] = get_field(
+        CacheConfig, "per_layer_kv_cache_fake_quant_bits"
+    )
     mamba_cache_dtype: MambaDType = CacheConfig.mamba_cache_dtype
     mamba_ssm_cache_dtype: MambaDType = CacheConfig.mamba_ssm_cache_dtype
     mamba_block_size: int | None = get_field(CacheConfig, "mamba_block_size")
@@ -1185,6 +1188,10 @@ class EngineArgs:
         cache_group.add_argument(
             "--kv-cache-fake-quant-bits",
             **cache_kwargs["kv_cache_fake_quant_bits"],
+        )
+        cache_group.add_argument(
+            "--per-layer-kv-cache-fake-quant-bits",
+            **cache_kwargs["per_layer_kv_cache_fake_quant_bits"],
         )
         cache_group.add_argument(
             "--kv-sharing-fast-prefill", **cache_kwargs["kv_sharing_fast_prefill"]
@@ -1893,6 +1900,7 @@ class EngineArgs:
             kv_cache_dtype_skip_layers=self.kv_cache_dtype_skip_layers,
             per_layer_kv_cache_dtype=self.per_layer_kv_cache_dtype,
             kv_cache_fake_quant_bits=self.kv_cache_fake_quant_bits,
+            per_layer_kv_cache_fake_quant_bits=self.per_layer_kv_cache_fake_quant_bits,
             kv_sharing_fast_prefill=self.kv_sharing_fast_prefill,
             mamba_cache_dtype=self.mamba_cache_dtype,
             mamba_ssm_cache_dtype=self.mamba_ssm_cache_dtype,

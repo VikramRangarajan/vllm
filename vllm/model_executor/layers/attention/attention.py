@@ -292,9 +292,9 @@ class Attention(nn.Module, AttentionLayerBase):
         if cache_config is not None and cache_config.per_layer_kv_cache_dtype:
             from vllm.model_executor.models.utils import extract_layer_index
 
-            layer_idx = str(extract_layer_index(prefix))
-            if layer_idx in cache_config.per_layer_kv_cache_dtype:
-                kv_cache_dtype = cache_config.per_layer_kv_cache_dtype[layer_idx]
+            _layer_idx = str(extract_layer_index(prefix))
+            if _layer_idx in cache_config.per_layer_kv_cache_dtype:
+                kv_cache_dtype = cache_config.per_layer_kv_cache_dtype[_layer_idx]
                 calculate_kv_scales = False
                 logger.debug(
                     "Layer %s: per-layer override kv_cache_dtype=%s",
@@ -307,9 +307,18 @@ class Attention(nn.Module, AttentionLayerBase):
         )
         self.kv_cache_dtype = kv_cache_dtype
         self.calculate_kv_scales = calculate_kv_scales
-        self.kv_cache_fake_quant_bits = (
-            cache_config.kv_cache_fake_quant_bits if cache_config else None
-        )
+        fq_bits: int | None = None
+        if cache_config is not None:
+            if cache_config.kv_cache_fake_quant_bits is not None:
+                fq_bits = cache_config.kv_cache_fake_quant_bits
+            elif cache_config.per_layer_kv_cache_fake_quant_bits:
+                from vllm.model_executor.models.utils import extract_layer_index
+
+                _layer_idx = str(extract_layer_index(prefix))
+                fq_bits = cache_config.per_layer_kv_cache_fake_quant_bits.get(
+                    _layer_idx
+                )
+        self.kv_cache_fake_quant_bits = fq_bits
         if num_kv_heads is None:
             num_kv_heads = num_heads
         assert num_heads % num_kv_heads == 0, (
@@ -741,7 +750,8 @@ def unified_kv_cache_update(
     layer_name = _resolve_layer_name(layer_name)
     _, attn_layer, kv_cache, layer_slot_mapping = get_attention_context(layer_name)
     if getattr(attn_layer, "kv_cache_fake_quant_bits", None):
-        fake_bits: int = attn_layer.kv_cache_fake_quant_bits
+        fake_bits = attn_layer.kv_cache_fake_quant_bits
+        assert isinstance(fake_bits, int)
         key = _fake_quantize_kv_cache(key, fake_bits)
         value = _fake_quantize_kv_cache(value, fake_bits)
 
@@ -760,9 +770,7 @@ def unified_kv_cache_update(
     return torch.empty(0, device=kv_cache.device, dtype=kv_cache.dtype)
 
 
-def _fake_quantize_kv_cache(
-    x: torch.Tensor, num_bits: int
-) -> torch.Tensor:
+def _fake_quantize_kv_cache(x: torch.Tensor, num_bits: int) -> torch.Tensor:
     """Symmetric quantize-dequantize round-trip (fake quantization).
 
     Quantizes ``x`` to ``num_bits`` bits using per-token symmetric
