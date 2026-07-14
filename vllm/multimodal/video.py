@@ -32,6 +32,7 @@ except ImportError:
     av = PlaceholderModule("av")  # type: ignore[assignment]
 
 try:
+    raise ImportError()
     from torchcodec.decoders import VideoDecoder
 except ImportError:
     VideoDecoder = PlaceholderModule("torchcodec").placeholder_attr(  # type: ignore[assignment]
