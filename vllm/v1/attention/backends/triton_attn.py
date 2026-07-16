@@ -116,7 +116,11 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             vllm_config, layer_names
         ) or model_config.get_num_attention_heads(vllm_config.parallel_config)
         self.num_heads_kv = model_config.get_num_kv_heads(vllm_config.parallel_config)
-        self.headdim = model_config.get_head_size()
+        self.headdim = (
+            kv_cache_spec.head_size
+            if isinstance(kv_cache_spec, AttentionSpec)
+            else model_config.get_head_size()
+        )
 
         # Check if CUDA Graphs are enabled for decode
         self.decode_cudagraph_enabled = (
@@ -400,11 +404,10 @@ class TritonAttentionImpl(AttentionImpl):
         """
         if self._k_scale_cache is not None:
             return
-        from vllm.utils.torch_utils import get_dtype_size
 
         num_blocks, _, block_size, nkv, padded_hs = kv_cache.shape
         dtype_sz = kv_cache.element_size()
-        scale_pad = get_dtype_size(torch.float32) // dtype_sz  # e.g. 4
+        scale_pad = 4 // dtype_sz
         hs = padded_hs - scale_pad
 
         raw = kv_cache.untyped_storage()
@@ -412,31 +415,30 @@ class TritonAttentionImpl(AttentionImpl):
             raw
         )
 
-        # In the raw bytes, each (block, kv_half, slot, head) occupies
-        # padded_hs * dtype_sz bytes.  The scale float32 sits at byte
-        # offset hs * dtype_sz within that region.
-        kv_half_bytes = block_size * nkv * padded_hs * dtype_sz
-        full_block_f32 = 2 * kv_half_bytes // 4  # stride between blocks
-        slot_f32 = nkv * padded_hs * dtype_sz // 4  # stride between slots
-        head_f32 = padded_hs * dtype_sz // 4  # stride between heads
-        scale_off_f32 = hs * dtype_sz // 4  # offset to scale within head
+        cache_offset = kv_cache.storage_offset() * dtype_sz  # bytes
+        cache_offset_f32 = cache_offset // 4
 
-        # K scales: kv_half=0
+        # Use the actual strides from the kv_cache tensor (correct even when
+        # page_size_padded introduces gaps between blocks).
+        stride_blk_f32 = kv_cache.stride(0) // 4
+        stride_kv_f32 = kv_cache.stride(1) // 4
+        stride_slot_f32 = kv_cache.stride(2) // 4
+        stride_head_f32 = kv_cache.stride(3) // 4
+        scale_off_f32 = hs * dtype_sz // 4
+
         self._k_scale_cache = torch.as_strided(
             base_f32,
             size=(num_blocks, block_size, nkv),
-            stride=(full_block_f32, slot_f32, head_f32),
-            storage_offset=scale_off_f32,
+            stride=(stride_blk_f32, stride_slot_f32, stride_head_f32),
+            storage_offset=cache_offset_f32 + scale_off_f32,
         )
         self._k_scale_cache.fill_(1.0)
 
-        # V scales: kv_half=1, offset by kv_half_bytes
-        v_base_f32 = kv_half_bytes // 4
         self._v_scale_cache = torch.as_strided(
             base_f32,
             size=(num_blocks, block_size, nkv),
-            stride=(full_block_f32, slot_f32, head_f32),
-            storage_offset=v_base_f32 + scale_off_f32,
+            stride=(stride_blk_f32, stride_slot_f32, stride_head_f32),
+            storage_offset=cache_offset_f32 + stride_kv_f32 + scale_off_f32,
         )
         self._v_scale_cache.fill_(1.0)
 
